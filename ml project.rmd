@@ -1,0 +1,175 @@
+---
+title: "Practical Machine Learning Project"
+author: "Xiao Wang"
+date: "April.2019"
+theme: cerulean
+---
+
+<style type="text/css">
+
+body{ /* Normal  */
+      font-size: 16px;
+  }
+
+}
+h1.title {
+  font-size: 38px;
+  color: DarkRed;
+}
+h1 { /* Header 1 */
+  font-size: 28px;
+  color: DarkBlue;
+}
+h2 { /* Header 1 */
+  font-size: 18px;
+  color: DarkBlue;
+}
+</style>
+
+
+#Background
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a 
+large amount of data about personal activity relatively inexpensively. These type of devices
+are part of the quantified self movement - a group of enthusiasts who take measurements about
+themselves regularly to improve their health, to find patterns in their behavior, or because
+they are tech geeks. One thing that people regularly do is quantify how much of a particular
+activity they do, but they rarely quantify how well they do it. In this project, I will
+use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants.
+They were asked to perform barbell lifts correctly and incorrectly in 5 different ways.
+The goal of this project is to predict the manner in which they did the exercise.
+The data come from this source: http://web.archive.org/web/20161224072740/http:/groupware.les.inf.puc-rio.br/har. 
+```{r}
+library(caret)
+library(rattle)
+library(e1071)
+library(randomForest)
+library(gbm)
+```
+
+## Load the data
+```{r}
+Train <- read.csv(url("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"),header=TRUE)
+Test<- read.csv(url("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"),header=TRUE)
+dim(Train)
+dim(Test)
+
+str(Train)
+```
+
+##The first 7 variables have little impact on the outcome classe. So We will exclude them from the model.
+```{r}
+Train <- Train[, -c(1:7)]
+Test <- Test[, -c(1:7)]
+```
+
+From the output above, there are many variables contain NA. 
+
+##Remove the NA
+```{r}
+train<- Train[, colSums(is.na(Train)) == 0]
+test <- Test[, colSums(is.na(Test)) == 0]
+```
+
+##Partioning the training set into two
+```{r}
+set.seed(1234)
+inTrain1 <- createDataPartition(train$classe, p=0.7, list=FALSE)
+Train1 <- train[inTrain1,]
+Test1 <- train[-inTrain1,]
+dim(Train1)
+```
+
+##Remove the variables that are near-zero-variance
+```{r}
+NZV <- nearZeroVar(Train1)
+trainData <- Train1[, -NZV]
+testData  <- Test1[, -NZV]
+dim(trainData)
+```
+
+Now we have 53 columns
+
+# Model building
+In the following, we will test 3 different models:
+
+1. classification trees
+2. random forests
+3. Generalized Boosted Model
+
+# 1. Prediction with classification trees
+```{r}
+trControl <- trainControl(method="cv", number=5)
+model_CT <- train(classe~., data=trainData, method="rpart", trControl=trControl)
+fancyRpartPlot(model_CT$finalModel)
+```
+
+##Validate the model on the testData
+```{r}
+predictTreeMod <- predict(model_CT, testData)
+cmtree <- confusionMatrix(predictTreeMod, testData$classe)
+cmtree
+```
+
+##plot matrix results
+```{r}
+plot(cmtree$table, col = cmtree$byClass, 
+     main = paste("Decision Tree - Accuracy =", round(cmtree$overall['Accuracy'], 4)))
+```
+
+The accuracy of this model is very low (48.9%), so this will not be a good fit.
+
+# 2. Prediction with random forests
+```{r}
+RF <- train(classe~., data=trainData, method="rf", trControl=trControl, verbose=FALSE)
+RF
+```
+Accuracy was used to select the optimal model using  the largest value.
+So here mtry = 27 was used.
+```{r}
+plot(RF,main="Accuracy of Random forest model by number of predictors")
+
+trainpred <- predict(RF,newdata=trainData)
+confMatRF <- confusionMatrix(trainData$classe,trainpred)
+```
+## Display confusion matrix and model accuracy
+```{r}
+confMatRF$table
+confMatRF$overall[1]
+names(RF$finalModel)
+RF$finalModel$classes
+plot(RF$finalModel,
+     main="Model error of Random forest model by number of trees")
+```
+## Compute the variable importance 
+```{r}
+MostImpVars <- varImp(RF)
+MostImpVars
+```
+With random forest method, we reached an accuracy of 1, indicating this is a good fit.
+
+# 3. Generalized Boosted Model
+```{r}
+GBM <- train(classe~., data=trainData, method="gbm", trControl=trControl, verbose=FALSE)
+GBM
+
+plot(GBM)
+
+trainpred <- predict(GBM,newdata=trainData)
+
+confMatGBM <- confusionMatrix(trainData$classe,trainpred)
+confMatGBM$table
+
+confMatGBM$overall[1]
+```
+# Conclusion
+Although the accuracy from this model is very high (0.97), 
+the random forest model is still better. We will use the random forest model 
+to predict the values of classe for the test data set.
+```{r}
+predict(RF,newdata=test)
+```
+
+
+
+
